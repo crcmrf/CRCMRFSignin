@@ -195,34 +195,35 @@ const GOOGLE_API_URL = "https://script.google.com/macros/s/AKfycbwcWWO2B83Vrmt_4
 var selectedType = ""; 
 var isSubmitting = false; 
 
-// Base function to handle JSON POST requests across different domains (CORS)
-function callGoogleAPI(payload, successCallback, failureCallback) {
+// =========================================================================
+// NEW ROBUST COMMUNICATION ENGINE FOR GITHUB PAGES
+// =========================================================================
+function sendRequestToGoogle(payload, successCallback, failureCallback) {
+  // Convert JSON parameters into a clean URL-encoded form format to bypass CORS blocks
+  const formBody = Object.keys(payload)
+    .map(key => encodeURIComponent(key) + '=' + encodeURIComponent(payload[key]))
+    .join('&');
+
   fetch(GOOGLE_API_URL, {
     method: "POST",
-    mode: "no-cors", // Allows sending data directly out to Google Macro endpoints safely
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload)
+    headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
+    body: formBody,
+    redirect: "follow" // Forces fetch to transparently process Google's backend macros redirection loop
   })
-  .then(function() {
-    // Note: 'no-cors' mode hides the text responses for security, 
-    // so we assume success if the network pipeline completes without throwing an error.
-    successCallback({ success: true });
+  .then(response => {
+    if (!response.ok) throw new Error("Network problem");
+    return response.json();
   })
-  .catch(function(err) {
+  .then(data => {
+    if (data && data.error) {
+      if (failureCallback) failureCallback(data.error);
+    } else {
+      successCallback(data);
+    }
+  })
+  .catch(err => {
     if (failureCallback) failureCallback(err);
   });
-}
-
-// Special wrapper for Active Entry Checking because it REQUIRES reading data back.
-// It bypasses basic limits by handling redirection responses.
-function checkSignInStatusAPI(payload, successCallback, failureCallback) {
-  fetch(GOOGLE_API_URL, {
-    method: "POST",
-    body: JSON.stringify(payload)
-  })
-  .then(response => response.json())
-  .then(data => successCallback(data))
-  .catch(err => failureCallback(err));
 }
 
 function changeView(viewId) {
@@ -262,18 +263,10 @@ function navigateHomeNext() {
 
 function handleGateAction(action, buttonElement) {
   const name = document.getElementById('gateName').value.trim();
-  if (!name) {
-    alert("Please enter your Full Name.");
-    return;
-  }
+  if (!name) { alert("Please enter your Full Name."); return; }
   
-  // CRUCIAL DYNAMIC SAFETY LINE:
-  // Dynamically grab the selected type from the home menu to ensure it's never empty
   const currentType = selectedType || document.getElementById('visitorType').value;
-  if (!currentType) {
-    alert("Please make sure a Visitor Type is selected on the main screen.");
-    return;
-  }
+  if (!currentType) { alert("Please make sure a Visitor Type is selected."); return; }
   
   if (action === 'Sign In') {
     if (isSubmitting) return; 
@@ -282,7 +275,7 @@ function handleGateAction(action, buttonElement) {
     const oldText = buttonElement.innerText;
     buttonElement.innerText = "Checking...";
 
-    checkSignInStatusAPI({ action: "checkActiveSignIn", type: currentType, name: name }, function(status) {
+    sendRequestToGoogle({ action: "checkActiveSignIn", type: currentType, name: name }, function(status) {
       isSubmitting = false;
       buttonElement.disabled = false;
       buttonElement.innerText = oldText;
@@ -306,20 +299,17 @@ function handleGateAction(action, buttonElement) {
       isSubmitting = false;
       buttonElement.disabled = false;
       buttonElement.innerText = oldText;
-      alert("Error checking site validation maps. Please try again.");
+      alert("Error checking site validation map loops. Please try again.");
     });
 
   } else {
     if (isSubmitting) return; 
     isSubmitting = true;
-
     buttonElement.disabled = true;
     const oldText = buttonElement.innerText;
     buttonElement.innerText = "Verifying...";
     
-    // Uses the validated currentType variable
-    checkSignInStatusAPI({ action: "checkActiveSignIn", type: currentType, name: name }, function(status) {
-      
+    sendRequestToGoogle({ action: "checkActiveSignIn", type: currentType, name: name }, function(status) {
       if (!status || !status.isAlreadySignedIn) {
         isSubmitting = false;
         buttonElement.disabled = false;
@@ -330,7 +320,7 @@ function handleGateAction(action, buttonElement) {
       
       buttonElement.innerText = "Signing Out...";
       
-      callGoogleAPI({ action: "saveSignOut", type: currentType, name: name }, function(res) {
+      sendRequestToGoogle({ action: "saveSignOut", type: currentType, name: name }, function(res) {
         isSubmitting = false;
         buttonElement.disabled = false;
         buttonElement.innerText = oldText;
@@ -341,7 +331,6 @@ function handleGateAction(action, buttonElement) {
         buttonElement.innerText = oldText;
         alert("Something went wrong with the connection. Please try again.");
       });
-      
     }, function() {
       isSubmitting = false;
       buttonElement.disabled = false;
@@ -360,39 +349,21 @@ function submitContractorSignIn(buttonElement) {
   const conditions = document.getElementById('c_conditions').value;
   const tickets = document.getElementById('c_tickets').value;
 
-  if (!phone || !company || !purpose || !map || !conditions || !tickets) {
-    alert("Please complete all required fields.");
-    return;
-  }
-  if (map === "No" || conditions === "No" || tickets === "No") {
-    changeView('view-rejected');
-    return;
-  }
+  if (!phone || !company || !purpose || !map || !conditions || !tickets) { alert("Please complete all required fields."); return; }
+  if (map === "No" || conditions === "No" || tickets === "No") { changeView('view-rejected'); return; }
 
   if (isSubmitting) return; 
   isSubmitting = true;
-
   buttonElement.disabled = true;
   buttonElement.innerText = "Submitting...";
 
-  callGoogleAPI({
-    action: "saveContractorSignIn",
-    name: name,
-    phone: phone,
-    company: company,
-    purpose: purpose,
-    map: map,
-    conditions: conditions,
-    tickets: tickets
+  sendRequestToGoogle({
+    action: "saveContractorSignIn", name: name, phone: phone, company: company, purpose: purpose, map: map, conditions: conditions, tickets: tickets
   }, function(res) {
-    isSubmitting = false;
-    buttonElement.disabled = false;
-    buttonElement.innerText = "Submit";
+    isSubmitting = false; buttonElement.disabled = false; buttonElement.innerText = "Submit";
     showSuccessScreen("Thank you for signing in!", "Don't forget to sign out when you leave site");
   }, function() {
-    isSubmitting = false;
-    buttonElement.disabled = false;
-    buttonElement.innerText = "Submit";
+    isSubmitting = false; buttonElement.disabled = false; buttonElement.innerText = "Submit";
     alert("Something went wrong with the connection. Please try again.");
   });
 }
@@ -405,38 +376,21 @@ function submitVisitorSignIn(buttonElement) {
   const map = document.getElementById('v_map').value;
   const conditions = document.getElementById('v_conditions').value;
 
-  if (!phone || !company || !purpose || !map || !conditions) {
-    alert("Please complete all required fields.");
-    return;
-  }
-  if (map === "No" || conditions === "No") {
-    changeView('view-rejected');
-    return;
-  }
+  if (!phone || !company || !purpose || !map || !conditions) { alert("Please complete all required fields."); return; }
+  if (map === "No" || conditions === "No") { changeView('view-rejected'); return; }
 
   if (isSubmitting) return; 
   isSubmitting = true;
-
   buttonElement.disabled = true;
   buttonElement.innerText = "Submitting...";
 
-  callGoogleAPI({
-    action: "saveVisitorSignIn",
-    name: name,
-    phone: phone,
-    company: company,
-    purpose: purpose,
-    map: map,
-    conditions: conditions
+  sendRequestToGoogle({
+    action: "saveVisitorSignIn", name: name, phone: phone, company: company, purpose: purpose, map: map, conditions: conditions
   }, function(res) {
-    isSubmitting = false;
-    buttonElement.disabled = false;
-    buttonElement.innerText = "Submit";
+    isSubmitting = false; buttonElement.disabled = false; buttonElement.innerText = "Submit";
     showSuccessScreen("Thank you for signing in!", "Don't forget to sign out when you leave site");
   }, function() {
-    isSubmitting = false;
-    buttonElement.disabled = false;
-    buttonElement.innerText = "Submit";
+    isSubmitting = false; buttonElement.disabled = false; buttonElement.innerText = "Submit";
     alert("Something went wrong with the connection. Please try again.");
   });
 }
@@ -450,39 +404,21 @@ function submitEmployeeSignIn(buttonElement) {
   const map = document.getElementById('e_map').value;
   const conditions = document.getElementById('e_conditions').value;
 
-  if (!empNumber || !phone || !dept || !purpose || !map || !conditions) {
-    alert("Please complete all required fields.");
-    return;
-  }
-  if (map === "No" || conditions === "No") {
-    changeView('view-rejected');
-    return;
-  }
+  if (!empNumber || !phone || !dept || !purpose || !map || !conditions) { alert("Please complete all required fields."); return; }
+  if (map === "No" || conditions === "No") { changeView('view-rejected'); return; }
 
   if (isSubmitting) return; 
   isSubmitting = true;
-
   buttonElement.disabled = true;
   buttonElement.innerText = "Submitting...";
 
-  callGoogleAPI({
-    action: "saveEmployeeSignIn",
-    name: name,
-    empNumber: empNumber,
-    phone: phone,
-    dept: dept,
-    purpose: purpose,
-    map: map,
-    conditions: conditions
+  sendRequestToGoogle({
+    action: "saveEmployeeSignIn", name: name, empNumber: empNumber, phone: phone, dept: dept, purpose: purpose, map: map, conditions: conditions
   }, function(res) {
-    isSubmitting = false;
-    buttonElement.disabled = false;
-    buttonElement.innerText = "Submit";
+    isSubmitting = false; buttonElement.disabled = false; buttonElement.innerText = "Submit";
     showSuccessScreen("Thank you for signing in!", "Don't forget to sign out when you leave site");
   }, function() {
-    isSubmitting = false;
-    buttonElement.disabled = false;
-    buttonElement.innerText = "Submit";
+    isSubmitting = false; buttonElement.disabled = false; buttonElement.innerText = "Submit";
     alert("Something went wrong with the connection. Please try again.");
   });
 }
