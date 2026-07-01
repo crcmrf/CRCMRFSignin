@@ -270,12 +270,10 @@ function handleGateAction(action, buttonElement) {
   if (action === 'Sign In') {
     if (isSubmitting) return; 
     isSubmitting = true;
-    
     buttonElement.disabled = true;
     const oldText = buttonElement.innerText;
     buttonElement.innerText = "Checking...";
 
-    // Run remote script status check logic via fetch 
     checkSignInStatusAPI({ action: "checkActiveSignIn", type: selectedType, name: name }, function(status) {
       isSubmitting = false;
       buttonElement.disabled = false;
@@ -304,23 +302,48 @@ function handleGateAction(action, buttonElement) {
     });
 
   } else {
+    // ==========================================
+    // UPDATED SIGN OUT PIPELINE WITH ACTIVE CHECK
+    // ==========================================
     if (isSubmitting) return; 
     isSubmitting = true;
 
     buttonElement.disabled = true;
     const oldText = buttonElement.innerText;
-    buttonElement.innerText = "Signing Out...";
+    buttonElement.innerText = "Verifying...";
     
-    callGoogleAPI({ action: "saveSignOut", type: selectedType, name: name }, function(res) {
-      isSubmitting = false;
-      buttonElement.disabled = false;
-      buttonElement.innerText = oldText;
-      showSuccessScreen("Thank you for signing out!", "Have a great day!");
+    // First run verification to ensure they have an open sign-in session
+    checkSignInStatusAPI({ action: "checkActiveSignIn", type: selectedType, name: name }, function(status) {
+      
+      if (!status || !status.isAlreadySignedIn) {
+        isSubmitting = false;
+        buttonElement.disabled = false;
+        buttonElement.innerText = oldText;
+        // Your requested custom validation popup alert
+        alert("No one is signed in under this name. Please sign in before signing out.");
+        return; 
+      }
+      
+      // If verification passes, change button text and execute real sign out sequence
+      buttonElement.innerText = "Signing Out...";
+      
+      callGoogleAPI({ action: "saveSignOut", type: selectedType, name: name }, function(res) {
+        isSubmitting = false;
+        buttonElement.disabled = false;
+        buttonElement.innerText = oldText;
+        showSuccessScreen("Thank you for signing out!", "Have a great day!");
+      }, function() {
+        isSubmitting = false;
+        buttonElement.disabled = false;
+        buttonElement.innerText = oldText;
+        alert("Something went wrong with the connection. Please try again.");
+      });
+      
     }, function() {
       isSubmitting = false;
       buttonElement.disabled = false;
       buttonElement.innerText = oldText;
-      alert("Something went wrong with the connection. Please try again.");
+      alert("Error checking sign-out permissions. Please try again.");
     });
   }
 }
