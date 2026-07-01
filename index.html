@@ -267,6 +267,14 @@ function handleGateAction(action, buttonElement) {
     return;
   }
   
+  // CRUCIAL DYNAMIC SAFETY LINE:
+  // Dynamically grab the selected type from the home menu to ensure it's never empty
+  const currentType = selectedType || document.getElementById('visitorType').value;
+  if (!currentType) {
+    alert("Please make sure a Visitor Type is selected on the main screen.");
+    return;
+  }
+  
   if (action === 'Sign In') {
     if (isSubmitting) return; 
     isSubmitting = true;
@@ -274,7 +282,7 @@ function handleGateAction(action, buttonElement) {
     const oldText = buttonElement.innerText;
     buttonElement.innerText = "Checking...";
 
-    checkSignInStatusAPI({ action: "checkActiveSignIn", type: selectedType, name: name }, function(status) {
+    checkSignInStatusAPI({ action: "checkActiveSignIn", type: currentType, name: name }, function(status) {
       isSubmitting = false;
       buttonElement.disabled = false;
       buttonElement.innerText = oldText;
@@ -284,13 +292,13 @@ function handleGateAction(action, buttonElement) {
         return; 
       }
 
-      if (selectedType === 'Contractor') {
+      if (currentType === 'Contractor') {
         document.getElementById('c_formName').value = name;
         changeView('view-contractor-signin');
-      } else if (selectedType === 'Visitor') {
+      } else if (currentType === 'Visitor') {
         document.getElementById('v_formName').value = name;
         changeView('view-visitor-signin');
-      } else if (selectedType === 'Employee') {
+      } else if (currentType === 'Employee') {
         document.getElementById('e_formName').value = name;
         changeView('view-employee-signin');
       }
@@ -302,9 +310,6 @@ function handleGateAction(action, buttonElement) {
     });
 
   } else {
-    // ==========================================
-    // UPDATED SIGN OUT PIPELINE WITH ACTIVE CHECK
-    // ==========================================
     if (isSubmitting) return; 
     isSubmitting = true;
 
@@ -312,22 +317,20 @@ function handleGateAction(action, buttonElement) {
     const oldText = buttonElement.innerText;
     buttonElement.innerText = "Verifying...";
     
-    // First run verification to ensure they have an open sign-in session
-    checkSignInStatusAPI({ action: "checkActiveSignIn", type: selectedType, name: name }, function(status) {
+    // Uses the validated currentType variable
+    checkSignInStatusAPI({ action: "checkActiveSignIn", type: currentType, name: name }, function(status) {
       
       if (!status || !status.isAlreadySignedIn) {
         isSubmitting = false;
         buttonElement.disabled = false;
         buttonElement.innerText = oldText;
-        // Your requested custom validation popup alert
         alert("No one is signed in under this name. Please sign in before signing out.");
         return; 
       }
       
-      // If verification passes, change button text and execute real sign out sequence
       buttonElement.innerText = "Signing Out...";
       
-      callGoogleAPI({ action: "saveSignOut", type: selectedType, name: name }, function(res) {
+      callGoogleAPI({ action: "saveSignOut", type: currentType, name: name }, function(res) {
         isSubmitting = false;
         buttonElement.disabled = false;
         buttonElement.innerText = oldText;
