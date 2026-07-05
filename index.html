@@ -59,6 +59,21 @@
     <button class="button btn-primary" onclick="navigateHomeNext()">Next</button>
   </div>
 
+  <!-- VIEW 1B: REMEMBERED SESSION SHORTCUT -->
+  <div id="view-remembered" class="view-section">
+    <h2>Active Session Detected</h2>
+    <p style="text-align: center; font-size: 16px;">
+      It looks like <strong id="rememberedNameDisplay">John Doe</strong> is currently signed in as a <strong id="rememberedTypeDisplay">Contractor</strong>.
+    </p>
+    
+    <button class="button btn-danger" id="rememberedSignOutBtn" onclick="handleRememberedSignOut(this)">Sign Me Out</button>
+    
+    <div style="text-align: center; margin-top: 25px; border-top: 1px solid #eee; padding-top: 15px;">
+      <p style="color: #666; font-size: 14px; margin-bottom: 10px;">Not you? Or need to sign a new person in?</p>
+      <button class="button btn-secondary" style="margin-top:0;" onclick="clearRememberedAndGoHome()">New Sign-In / Switch User</button>
+    </div>
+  </div>
+
   <div id="view-gate" class="view-section">
     <h2 id="gateTitle">Profile</h2>
     <p style="text-align: center; color: #dc3545;">
@@ -426,12 +441,25 @@ function submitEmployeeSignIn(buttonElement) {
 function showSuccessScreen(title, message) {
   document.getElementById('completeTitle').innerText = title;
   document.getElementById('completeBox').innerText = message;
+  
+  // Detect if this success screen came from a SIGN IN sequence
+  // If it was a sign-in, capture who it was and save them to the device
+  if (title.toLowerCase().includes("in")) {
+    const name = document.getElementById('gateName').value.trim();
+    const currentType = selectedType || document.getElementById('visitorType').value;
+    if (name && currentType) {
+      localStorage.setItem("mrf_active_name", name);
+      localStorage.setItem("mrf_active_type", currentType);
+    }
+  }
+  
   changeView('view-complete');
 }
 
 function resetToGlobalHome() {
   isSubmitting = false; 
 
+  // Clear inputs out
   document.getElementById('visitorType').value = "";
   document.getElementById('gateName').value = "";
   document.getElementById('e_empNumber').value = "";
@@ -452,11 +480,93 @@ function resetToGlobalHome() {
   document.getElementById('e_map').value = "";
   document.getElementById('e_conditions').value = "";
   
-  changeView('view-home');
+  // CHANGE THIS LINE: Instead of unconditionally showing view-home, run the check!
+  checkCachedSession();
 }
 
+// =========================================================================
+// LOCAL CACHING / SESSION LOGIC
+// =========================================================================
+
+// Run automatically when the webpage loads up
+function checkCachedSession() {
+  var cachedName = localStorage.getItem("mrf_active_name");
+  var cachedType = localStorage.getItem("mrf_active_type");
+  
+  if (cachedName && cachedType) {
+    // If someone is saved on this device, route them to the shortcut screen
+    document.getElementById("rememberedNameDisplay").innerText = cachedName;
+    document.getElementById("rememberedTypeDisplay").innerText = cachedType;
+    changeView("view-remembered");
+  } else {
+    // Otherwise, show the normal home screen
+    changeView("view-home");
+  }
+}
+
+// Handler for the shortcut Sign Out button
+function handleRememberedSignOut(buttonElement) {
+  var cachedName = localStorage.getItem("mrf_active_name");
+  var cachedType = localStorage.getItem("mrf_active_type");
+  
+  if (!cachedName || !cachedType) {
+    clearRememberedAndGoHome();
+    return;
+  }
+  
+  if (isSubmitting) return; 
+  isSubmitting = true;
+  buttonElement.disabled = true;
+  buttonElement.innerText = "Verifying...";
+  
+  // Verify with Google Sheet that they are actually still signed in
+  sendRequestToGoogle({ action: "checkActiveSignIn", type: cachedType, name: cachedName }, function(status) {
+    if (!status || !status.isAlreadySignedIn) {
+      isSubmitting = false;
+      buttonElement.disabled = false;
+      buttonElement.innerText = "Sign Me Out";
+      alert("No active sign-in found on the sheet for this profile. Resetting screen.");
+      clearRememberedAndGoHome();
+      return; 
+    }
+    
+    buttonElement.innerText = "Signing Out...";
+    
+    // Perform actual sign out
+    sendRequestToGoogle({ action: "saveSignOut", type: cachedType, name: cachedName }, function(res) {
+      isSubmitting = false;
+      buttonElement.disabled = false;
+      buttonElement.innerText = "Sign Me Out";
+      
+      // CRUCIAL: Clear localStorage since they are now completely signed out
+      localStorage.removeItem("mrf_active_name");
+      localStorage.removeItem("mrf_active_type");
+      
+      showSuccessScreen("Thank you for signing out!", "Have a great day!");
+    }, function() {
+      isSubmitting = false;
+      buttonElement.disabled = false;
+      buttonElement.innerText = "Sign Me Out";
+      alert("Connection issue. Please try again.");
+    });
+  }, function() {
+    isSubmitting = false;
+    buttonElement.disabled = false;
+    buttonElement.innerText = "Sign Me Out";
+    alert("Verification network error. Please try again.");
+  });
+}
+
+// If a new person walks up, clear the cache storage and send them to the form starter
+function clearRememberedAndGoHome() {
+  localStorage.removeItem("mrf_active_name");
+  localStorage.removeItem("mrf_active_type");
+  resetToGlobalHome();
+}
 updateClocks();
 setInterval(updateClocks, 1000);
+// Run cache evaluation on cold-boot startup
+checkCachedSession();
 </script>
 </body>
 </html>
